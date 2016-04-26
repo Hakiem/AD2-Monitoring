@@ -1,0 +1,81 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Web;
+using System.Web.Mvc;
+using Application.DomainModel;
+using Web.Models;
+
+namespace Web.Controllers
+{
+    public class PerformanceController : Controller
+    {
+        public ActionResult Index()
+        {
+            ViewBag.Message = "Performance Counters";
+
+            var preparedList = new CachedPerformanceCounterViewModel(
+                GetPerformanceCounterCachedSortedDictionaryForTreeViewNavigation(),
+                GetCachedMonitorItemsBetweenDates(
+                    DateTime.Now.ToShortDateString(), 
+                    DateTime.Now.ToShortDateString()
+                )
+            )
+            {
+                DtFrom = DateTime.Now.ToShortDateString(),
+                DtTo = DateTime.Now.ToShortDateString()
+            };
+
+            return View(preparedList);
+        }
+
+        [HttpPost]
+        public ActionResult Index(CachedPerformanceCounterViewModel modelPassedBack)
+        {
+            ViewBag.Message = "Performance Counters";
+
+            var preparedList = new CachedPerformanceCounterViewModel(
+                GetPerformanceCounterCachedSortedDictionaryForTreeViewNavigation(),
+                GetCachedMonitorItemsBetweenDates(modelPassedBack.DtFrom, modelPassedBack.DtTo))
+            {
+                DtFrom = modelPassedBack.DtFrom,
+                DtTo = modelPassedBack.DtTo
+            };
+
+            return View(preparedList);
+        }
+
+        private static List<MonitorWithStringDates> GetCachedMonitorItemsBetweenDates(string dateFrom, string dateTo)
+        {
+            var tempMonitorDict = GetMonitorCachedDictionary();
+
+            return (
+                        from monitorItems in tempMonitorDict.Values.ToList()
+                        from monitorItem in monitorItems
+                        where monitorItem.From >= Convert.ToDateTime(dateFrom) && monitorItem.From <= Convert.ToDateTime(dateTo)
+                        orderby monitorItem.From
+                        select new MonitorWithStringDates
+                        {
+                            PerformanceCounterId = monitorItem.PerformanceCounterId,
+                            Count = monitorItem.Count,
+                            Min = monitorItem.Min,
+                            Max = monitorItem.Max,
+                            Avg = monitorItem.Avg,
+                            From = string.Format("{0:MMM dd-yy HH:mm:ss}", monitorItem.From)
+                        }
+                    ).ToList();
+        }
+
+        private static SortedDictionary<string, List<TreeViewPropertiesClass>> GetPerformanceCounterCachedSortedDictionaryForTreeViewNavigation()
+        {
+            var cachedPerformanceCounterDictionary = HttpRuntime.Cache.Get("CachedPerformancCounterDictionary") as SortedDictionary<string, List<TreeViewPropertiesClass>>;
+            return cachedPerformanceCounterDictionary;
+        }
+
+        private static Dictionary<int, List<Monitor>> GetMonitorCachedDictionary()
+        {
+            var cachedMonitorDictionary = HttpRuntime.Cache.Get("CachedMonitorDictionary") as Dictionary<int, List<Monitor>>;
+            return cachedMonitorDictionary;
+        }
+    }
+}

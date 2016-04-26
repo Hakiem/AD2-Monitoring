@@ -1,0 +1,28 @@
+﻿using System;
+
+namespace Application.DomainModel
+{
+    public class Monitor : IMonitor
+    {
+        public Monitor() { }
+
+        public Monitor(int _performanceCounterId, string _server, int _count, double _min, double _max, double _avg, DateTime _from) 
+        {
+            PerformanceCounterId = _performanceCounterId;
+            Server = _server;
+            Count = _count;
+            Min = _min;
+            Max = _max;
+            Avg = _avg;
+            From = _from;
+        }
+
+        public int PerformanceCounterId { get; set; }
+        public string Server { get; set; }
+        public int Count { get; set; }
+        public double Min { get; set; }
+        public double Max { get; set; }
+        public double Avg { get; set; }
+        public DateTime From { get; set; }
+    }
+}

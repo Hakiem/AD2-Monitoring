@@ -1,0 +1,30 @@
+﻿using System.Data;
+using System.Data.Common;
+
+namespace Application.Core
+{
+    public class DbConnection : ConfigurationSection
+    {
+        protected readonly SqlStatements.SqlStatements _sql;
+
+        public DbConnection()
+        {
+            _sql = new SqlStatements.SqlStatements();
+        }
+
+        protected static IDataReader ExecuteReader(DbCommand cmd)
+        {
+            return ExecuteReader(cmd, CommandBehavior.Default);
+        }
+
+        protected static IDataReader ExecuteReader(DbCommand cmd, CommandBehavior behavior)
+        {
+            return cmd.ExecuteReader(behavior);
+        }
+
+        protected static object ExecuteScalar(DbCommand cmd)
+        {
+            return cmd.ExecuteScalar();
+        }
+    }
+}

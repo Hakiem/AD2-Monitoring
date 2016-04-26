@@ -1,0 +1,562 @@
+﻿@using System.Web.Script.Serialization
+@using Web.Models
+@model CachedPerformanceCounterViewModel
+@{
+    ViewBag.Title = "Home Page";
+}
+
+@section featured {
+    <section class="featured">
+        <div class="content-wrapper">
+            <hgroup class="title">
+                @*<h1>@ViewBag.Title.</h1>*@
+                <h2>@ViewBag.Message</h2>
+            </hgroup>
+        </div>
+    </section>
+}
+
+<script src="@Url.Content("~/amcharts/amcharts.js")" type="text/javascript"></script>
+<script src="@Url.Content("~/Scripts/jquery-1.9.1.min.js")" type="text/javascript"></script>
+<script src="@Url.Content("~/Scripts/LinqToJs/linq.js")"></script>
+<script src="@Url.Content("~/Scripts/TreeView/jquery.treeview.js")"></script>
+<script src="@Url.Content("~/Scripts/ToggleDiv/jquery.nicescroll.min.js")"></script>
+<link href="@Url.Content("~/Content/jquery.treeview.css")" rel="stylesheet" />
+<script src="@Url.Content("~/Scripts/ToggleDiv/jquery.nicescroll.min.js")"></script>
+
+@{
+    var serializer = new JavaScriptSerializer { MaxJsonLength = 2147483644 };
+}
+
+@section Scripts {
+    @Scripts.Render("~/bundles/jqueryval")
+    
+    @Scripts.Render("~/bundles/jqueryui")
+    @Styles.Render("~/Content/themes/base/css")
+
+    <script type="text/javascript">
+
+        var dataHolder = @Html.Raw(serializer.Serialize(Model.CustomDictionary));
+
+        // TreeView navigator configurations
+        $(function() {
+            $("#treeView").treeview({
+                collapsed: true,
+                animated: "medium",
+                control: "#sidetreecontrol",
+                prerendered: true,
+                persist: "cookie",
+                cookieId: "rememberTreeViewState"
+            });
+        });
+
+        // check if cookies are enabled in the client runnnig browser
+        var cookieEnabled = (navigator.cookieEnabled) ? true : false;
+
+        // set cookie contents to the page on init or after postback
+        $(document).ready(function() {
+            if (cookieEnabled == true) {
+                if ($.cookie("clientPerformanceCounterIds") == null) {
+                    $.cookie("clientPerformanceCounterIds", "0", { expires: 365, path: '/', secure: false });
+                } else {
+                    var clientPerformanceCounterIdsCollection = $.cookie("clientPerformanceCounterIds").split(",");
+                    for (var i = 0; i < clientPerformanceCounterIdsCollection.length; i++) {
+                        if (clientPerformanceCounterIdsCollection[i] != 0) {
+                            $('#' + clientPerformanceCounterIdsCollection[i]).attr('checked', true);
+                            InitiateChartEvents(clientPerformanceCounterIdsCollection[i]);
+                        }
+                    }
+                }
+            } else {
+                $(function() {
+                    $("#dialog").dialog({
+                        height: 300,
+                        modal: true,
+                        buttons: {
+                            Ok: function() {
+                                $(this).dialog("close");
+                            }
+                        }
+                    });
+                    $("div#grandDiv").css('display', 'block');
+                });
+            }
+        });
+
+        // Configurations for Date from and Date To fields
+        $(document).ready(function() {
+            $("#datepicker1").datepicker({
+                changeMonth: true,
+                numberOfMonths: 1,
+                dateFormat: "yy-mm-dd",
+                changeYear: true,
+                onClose: function(selectedDate) {
+                    $("#datepicker2").datepicker("option", "minDate", selectedDate);
+                }
+            });
+
+            $("#datepicker2").datepicker({
+                changeMonth: true,
+                numberOfMonths: 1,
+                dateFormat: "yy-mm-dd",
+                changeYear: true,
+                onClose: function(selectedDate) {
+                    $("#datepicker1").datepicker("option", "maxDate", selectedDate);
+                }
+            });
+        });
+
+        // Fired on each checkbox checked or unchecked in the treeview navigator
+        $(function() {
+            $(".tree").click(function() {
+                if ($(this).is(':checked')) {
+                    InitiateChartEvents($(this).attr('id'));
+                    cookieBuilder($(this).attr('id'));
+                } else {
+                    $("div#grandDiv").find('div#chart_' + $(this).attr('id')).remove();
+                    removeCookieElement($(this).attr('id'));
+                }
+            });
+        });
+
+        // Build or remove chat for a checked component in the treeview navigator
+        function InitiateChartEvents(id) {
+            var chartDataReturned = queryDataHolder(id);
+            if ((chartDataReturned != null) && (chartDataReturned.length > 0)) {
+                createDynamicDiv(id);
+                createChart(chartDataReturned, id);
+            } else {
+                var dynamicDiv = $(
+                    "<div id=chart_" + id + ">No Data recorded for : " + $('#lbl_' + id).text() + "</div>");
+                $(dynamicDiv).addClass("noDataDiv");
+                $('#grandDiv').append(dynamicDiv);
+            }
+        }
+
+        // Query array and return queryresults for a checked component in treeview navigator
+        function queryDataHolder(id) {
+            var queryResult = Enumerable.From(dataHolder)
+                .Where(function(x) { return x.PerformanceCounterId == id; })
+                .Select(function(x) {
+                    return {
+                        'Count': x.Count,
+                        'Min': x.Min,
+                        'Max': x.Max,
+                        'Avg': x.Avg,
+                        'From': x.From
+                    };
+                }).ToArray();
+
+            return queryResult;
+        }
+
+        function createDynamicDiv(id) {
+            var dynamicDiv = $("<div id=chart_" + id + "></div>");
+            $(dynamicDiv).css('display', 'block');
+            $(dynamicDiv).css('height', '400px');
+            $('#grandDiv').append(dynamicDiv);
+        }
+
+        function createChart(data, id) {
+            var chart;
+
+            // SERIAL CHART    
+            chart = new AmCharts.AmSerialChart();
+            chart.borderAlpha = 0.8;
+
+            // get balloon intance
+            var balloon = chart.balloon;
+            // set properties
+            balloon.adjustBorderColor = true;
+            balloon.color = "#000000";
+            balloon.cornerRadius = 5;
+            balloon.fillColor = "#FFFFFF";
+
+            chart.pathToImages = "@Url.Content("~/amcharts/images/")";
+            chart.height = 400;
+            chart.fontSize = 11;
+            chart.fontFamily = "Segoe UI";
+
+            chart.zoomOutButton = {
+                backgroundColor: '#000000',
+                backgroundAlpha: 0.15
+            };
+
+            var chartTitle = $('#lbl_' + id).text();
+            chart.addTitle(chartTitle, 12);
+            chart.dataProvider = data;
+            chart.validateData();
+            chart.categoryField = "From";
+
+            // listen for "dataUpdated" event (fired when chart is inited) and call zoomChart method when it happens
+            chart.addListener("dataUpdated", zoomChart);
+            chart.handleResize();
+
+            // AXES
+            // category                
+            var categoryAxis = chart.categoryAxis;
+            categoryAxis.dashLength = 2;
+            categoryAxis.axisAlpha = 0.5;
+            categoryAxis.fillAlpha = 4;
+            categoryAxis.axisThickness = 3;
+            categoryAxis.dashLength = 2;
+            categoryAxis.gridAlpha = 15;
+            categoryAxis.gridPosition = "start";
+            categoryAxis.axisColor = "#DADADA";
+            categoryAxis.fontsize = 12;
+            categoryAxis.startOnAxis = true;
+            categoryAxis.equalSpacing = true;
+            categoryAxis.gridCount = 0;
+            categoryAxis.axisThickness = 5;
+            categoryAxis.labelRotation = 50;
+            categoryAxis.equalSpacing = true;
+            categoryAxis.title = "Time";
+            categoryAxis.titleBold = true;
+            categoryAxis.titleFontSize = 12;
+
+            // first value axis (on the left)
+            var valueAxis1 = new AmCharts.ValueAxis();
+            valueAxis1.axisColor = "#ff00f7";
+            valueAxis1.position = "left";
+            valueAxis1.offset = 50;
+            valueAxis1.axisThickness = 2;
+            valueAxis1.gridAlpha = 0;
+            chart.addValueAxis(valueAxis1);
+
+            // second value axis (on the left)
+            var valueAxis2 = new AmCharts.ValueAxis();
+            valueAxis2.position = "right"; // this line makes the axis to appear on the right
+            valueAxis2.axisColor = "#9C6F07";
+            valueAxis2.axisThickness = 2;
+            valueAxis2.gridAlpha = 0;
+            chart.addValueAxis(valueAxis2);
+
+            // third value axis (on the left)
+            var valueAxis3 = new AmCharts.ValueAxis();
+            valueAxis3.position = "left"; // this line makes the axis to appear on the right
+            valueAxis3.axisColor = "#184201";
+            valueAxis3.axisThickness = 2;
+            valueAxis3.gridAlpha = 0;
+            chart.addValueAxis(valueAxis3);
+
+            // Fourth value axis (on the left)
+            var valueAxis4 = new AmCharts.ValueAxis();
+            valueAxis4.position = "right"; // this line makes the axis to appear on the right
+            valueAxis4.offset = 50;
+            valueAxis4.axisColor = "#1df505";
+            valueAxis4.axisThickness = 2;
+            valueAxis4.gridAlpha = 0;
+            chart.addValueAxis(valueAxis4);
+
+            // GRAPHS
+            // first graph
+            var graph1 = new AmCharts.AmGraph();
+            graph1.valueAxis = valueAxis1; // we have to indicate which value axis should be used
+            graph1.title = "Count";
+            graph1.valueField = "Count";
+            graph1.type = "smoothedLine";
+            graph1.bullet = "round";
+            graph1.hideBulletsCount = 30;
+            chart.addGraph(graph1);
+
+            // second graph
+            var graph2 = new AmCharts.AmGraph();
+            graph2.valueAxis = valueAxis2; // we have to indicate which value axis should be used
+            graph2.title = "Minimum";
+            graph2.valueField = "Min";
+            graph2.type = "smoothedLine";
+            graph2.bullet = "square";
+            graph2.hideBulletsCount = 30;
+            chart.addGraph(graph2);
+
+            // third graph
+            var graph3 = new AmCharts.AmGraph();
+            graph3.valueAxis = valueAxis3; // we have to indicate which value axis should be used
+            graph3.title = "Maximum";
+            graph3.valueField = "Max";
+            graph3.type = "smoothedLine";
+            graph3.bullet = "bubble";
+            graph3.hideBulletsCount = 30;
+            chart.addGraph(graph3);
+
+            // fouth graph
+            var graph4 = new AmCharts.AmGraph();
+            graph4.valueAxis = valueAxis4; // we have to indicate which value axis should be used
+            graph4.title = "Average";
+            graph4.valueField = "Avg";
+            graph4.type = "smoothedLine";
+            graph4.bullet = "triangleDown";
+            graph4.hideBulletsCount = 30;
+            chart.addGraph(graph4);
+
+            // CURSOR
+            var chartCursor = new AmCharts.ChartCursor();
+            chartCursor.cursorPosition = "mouse";
+            chart.addChartCursor(chartCursor);
+
+            // SCROLLBAR
+            var chartScrollbar = new AmCharts.ChartScrollbar();
+            chart.addChartScrollbar(chartScrollbar);
+
+            // LEGEND
+            var legend = new AmCharts.AmLegend();
+            legend.showEntries = true;
+            legend.useMarkerColorForLabels = true;
+            legend.equalWidths = true;
+            legend.valueWidth = 30;
+            legend.maxColumns = 5;
+            legend.marginLeft = 110;
+            chart.addLegend(legend);
+            
+            // WRITE
+            chart.write("chart_" + id);
+
+            function zoomChart() {
+                chart.zoomToIndexes(0, data.length - 1);
+            }
+        }
+
+        function cookieBuilder(id) {
+            if (checkIfCookiesEnabledAndClientPerformanceCounterIdsCookieExists()) {
+                var newCookieArray = new Array();
+                var oldCookieArray = $.cookie("clientPerformanceCounterIds");
+                newCookieArray.push(oldCookieArray);
+                newCookieArray.push(id);
+
+                $.cookie("clientPerformanceCounterIds", newCookieArray);
+            }
+        }
+
+        function removeCookieElement(id) {
+            if (checkIfCookiesEnabledAndClientPerformanceCounterIdsCookieExists()) {
+                var oldCookieArray = $.cookie("clientPerformanceCounterIds").split(",");
+                oldCookieArray.splice(oldCookieArray.indexOf(id), 1);
+                $.cookie("clientPerformanceCounterIds", oldCookieArray);
+            }
+        }
+
+        function checkIfCookiesEnabledAndClientPerformanceCounterIdsCookieExists() {
+            return ((cookieEnabled == true) && ($.cookie("clientPerformanceCounterIds") != null)) ? true : false;
+        }
+
+        $(document).ready(function() {
+            $("#graphss").niceScroll({ cursorborder: "", cursorcolor: "#00F", boxzoom: true });
+        });
+
+        function loadingWaitFunction() {
+            var url = '@Url.Action("Index", "Performance")';
+            $("#divLoading").show();
+            $.post(url, null,
+                function() {
+                    $("#divLoading").hide();
+                });
+        }
+
+        $("#EmptyParentDiv").click(function () {
+            if (window.confirm("Are you sure you want to remove all the graphs?") == true) {
+                // empty the grandDiv div
+                $("#grandDiv").empty();
+            
+                // uncheck all the checkboxes
+                var clientPerformanceCounterIdsCollection = $.cookie("clientPerformanceCounterIds").split(",");
+                for (var i = 0; i < clientPerformanceCounterIdsCollection.length; i++) {
+                    if (clientPerformanceCounterIdsCollection[i] != 0) {
+                        $('#' + clientPerformanceCounterIdsCollection[i]).attr('checked', false);
+                    }
+                }
+            
+                // reset the cookie back to its default value
+                $.cookie("clientPerformanceCounterIds", "0");
+            }
+        });
+        
+    </script>
+}
+
+<div id="ItemList">
+    @using (Html.BeginForm())
+    {
+        @Html.ValidationSummary(true)
+        <table style="font-size: 11px" align="center">
+            <tr>
+                <td style="vertical-align: middle"><b>Date From</b></td>
+                <td> @Html.TextBoxFor(model => model.DtFrom, new {@id = "datepicker1"})</td>
+                <td style="vertical-align: middle"><b>Date To</b></td>
+                <td>@Html.TextBoxFor(model => model.DtTo, new {@id = "datepicker2"})</td>
+                <td><input type="submit" value="Reload Graphs" onclick="loadingWaitFunction();" /></td>
+            </tr>
+        </table>
+    }
+    <br />
+    <table style="width: 97%;">
+        <tr><td style="text-align: right"><a id="EmptyParentDiv" href="#">Remove all graphs</a></td></tr>
+    </table>
+    <br />
+    <table style="width: 97%; border: 1px black solid;">
+        <tr>
+            <td style="width: 8%; vertical-align: top">
+                <div id="performanceCounter" class="performanceCounterContainers" style="width: 530px;">
+                    <div id="sidetreecontrol">
+                        <a title="Click here to collapse all child nodes in the tree" href="?#">Collapse All</a> | 
+                        <a title="Click here to expand all child nodes in the tree" href="?#">Expand All</a>
+                    </div>
+                    <br />
+                    <ul id="treeView">
+                        @{
+                            foreach (var eachItem in Model.CustomListFromCachedDictionary)
+                            {
+                                <li><span style="font-weight: bold">@eachItem.Key</span>
+                                    <ul>
+                                        @{
+                                            foreach (var childCategoryList in eachItem.Value)
+                                            {
+                                                <li>
+
+                                                    <input type="checkbox" name="allPerformanceCounterNames" id="@childCategoryList.SubItemId" class="tree"/>
+                                                    <label for="@childCategoryList.SubItemId" id="@string.Format("lbl_{0}", childCategoryList.SubItemId)" style="font-size: 12px" >
+                                                        @childCategoryList.SubItemName
+                                                    </label>
+                                                </li>
+                                            }
+                                        }
+                                    </ul>
+                                </li>
+                            }
+                        }
+                    </ul>
+                </div>
+            </td>
+            <td style="width: 92%; vertical-align: top">
+                <div id="graphs" class="performanceCounterContainers">
+                    <div id="grandDiv" style="width: 100%; overflow: visible"></div>
+                </div>
+            </td>
+        </tr>
+    </table>
+        
+</div>
+
+    <div id="dialog" title="Cookies Blocked" style="display: none">
+        <p>
+            Your browser settings are preventing this application from helping you have a better experience
+            <br /><br/>
+            Please enable cookies in this browser.
+        </p>
+    </div>
+
+<div id="divLoading" style="" >
+        <p style="position: absolute; top: 30%; left: 45%; color: White;">
+            Loading, please wait...<img src="@Url.Content("~/Images/ajaxSpinner.gif")" width="30" height="30" alt="">
+        </p>
+    </div>
+
+    <style type="text/css">
+        th, td
+        {
+            padding: 5px;
+        }
+
+        table
+        {
+            border-collapse: separate;
+            border-spacing: 5px;
+        }
+
+        table
+        {
+            border-collapse: collapse;
+            border-spacing: 0;
+        }
+
+        th, td
+        {
+            vertical-align: top;
+        }
+
+        table
+        {
+            margin: 0 auto;
+        }
+
+        .noDataDiv
+        {
+            text-align: center;
+            color: red;
+            padding: 5px;
+            font-style: italic
+        }
+
+        .performanceCounterContainers
+        {
+            height: 750px;
+            overflow: scroll;
+        }
+
+        label
+        {
+            display: inline-block;
+            cursor: pointer;
+            position: relative;
+            padding-left: 25px;
+            margin-right: 15px;
+            font-size: 13px;
+        }
+
+        input[type=checkbox]
+        {
+            display: none;
+        }
+
+        label:before
+        {
+            content: "";
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            margin-right: 10px;
+            position: absolute;
+            left: 0;
+            bottom: 1px;
+            background-color: #aaa;
+            box-shadow: inset 0px 2px 3px 0px rgba(0, 0, 0, .3), 0px 1px 0px 0px rgba(255, 255, 255, .8);
+        }
+
+        .checkbox label
+        {
+            margin-bottom: 10px;
+        }
+
+        .checkbox label:before
+        {
+            border-radius: 3px;
+        }
+
+        input[type=checkbox]:checked + label:before
+        {
+            content: "\2713";
+            text-shadow: 1px 1px 1px rgba(0, 0, 0, .2);
+            font-size: 15px;
+            color: #f3f3f3;
+            text-align: center;
+            line-height: 15px;
+        }
+
+        #divLoading {
+            margin: 0px; 
+            padding: 0px; 
+            position: fixed; 
+            right: 0px;
+            top: 0px; 
+            width: 100%; 
+            height: 100%; 
+            background-color: #666666; 
+            z-index: 30001;
+            opacity: .9; 
+            filter: alpha(opacity=70); 
+            display: none
+        }
+
+        body {
+            font-size: 11px;
+        }
+    </style>

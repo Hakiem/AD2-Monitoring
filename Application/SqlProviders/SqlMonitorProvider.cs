@@ -1,0 +1,62 @@
+﻿using System;
+using System.Data;
+using Application.Core;
+using Application.DomainModel;
+using System.Collections.Generic;
+using MySql.Data.MySqlClient;
+
+namespace Application.SqlProviders
+{
+    public sealed class SqlMonitorProvider : DbConnection
+    {
+        private MySqlTransaction _tr;
+
+        /// <summary>
+        /// Retrieves all Monitor Items 
+        /// </summary>
+        /// <returns></returns>
+        public List<Monitor> GetAllMonitorItems(DateTime lastDictionaryTimeStamp)
+        {
+            using (var con  = new MySqlConnection(ConnString))
+            {
+                var cmd = new MySqlCommand(Sql.GetAllMonitorItems(), con) { CommandType = CommandType.Text };
+                cmd.Parameters.Add("@LastCacheDictionaryTimeStamp", MySqlDbType.Datetime).Value = lastDictionaryTimeStamp;
+                con.Open();
+
+                try
+                {
+                    _tr = con.BeginTransaction();
+                    return GetMonitorItemsCollectionFromReader(ExecuteReader(cmd));
+                }
+                catch (Exception ex)
+                {
+                    _tr.Rollback();
+                    return null;
+                }
+            }
+        }
+
+        private static Monitor GetMonitorItemsFromReader(IDataRecord reader)
+        {
+            return new Monitor(
+                Convert.ToInt32(reader[0]),
+                reader[1].ToString(),
+                Convert.ToInt32(reader[2]), 
+                Math.Round(Convert.ToDouble(reader[3]), 1),
+                Math.Round(Convert.ToDouble(reader[4]), 1),
+                Math.Round(Convert.ToDouble(reader[5]), 1),
+                Convert.ToDateTime(reader[6])
+            );
+        }
+            
+        private static List<Monitor> GetMonitorItemsCollectionFromReader(IDataReader reader)
+        {
+            var monitorItems = new List<Monitor>();
+
+            while (reader.Read())
+                monitorItems.Add(GetMonitorItemsFromReader(reader));
+
+            return monitorItems;
+        }
+    }
+}
